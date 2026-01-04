@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import './styles/main.css';
-import UploadComponent from './components/UploadComponent';
+import DWConnectorComponent from './components/DWConnectorComponent';
 import PreprocessComponent from './components/PreprocessComponent';
 import KMeansComponent from './components/KMeansComponent';
-import ResultsComponent from './components/ResultsComponent';
+import AnalysisComponent from './components/AnalysisComponent';
 
 function App() {
     const [currentStep, setCurrentStep] = useState(1);
@@ -12,7 +12,6 @@ function App() {
     const [sheets, setSheets] = useState([]);
     const [selectedColumns, setSelectedColumns] = useState([]);
     const [kmeansResult, setKmeansResult] = useState(null);
-    const [conclusion, setConclusion] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -41,11 +40,6 @@ function App() {
         setError(null);
     };
 
-    const handleConclusion = (data) => {
-        setConclusion(data);
-        setError(null);
-    };
-
     const handleError = (msg) => {
         setError(msg);
     };
@@ -57,7 +51,6 @@ function App() {
         setSheets([]);
         setSelectedColumns([]);
         setKmeansResult(null);
-        setConclusion(null);
         setError(null);
         setLoading(false);
     };
@@ -73,11 +66,11 @@ function App() {
             <div className="steps">
                 <div className={`step ${currentStep === 1 ? 'active' : ''} ${currentStep > 1 ? 'done' : ''}`}>
                     <span className="step-number">1</span>
-                    <span>Tải lên</span>
+                    <span>Kết nối</span>
                 </div>
                 <div className={`step ${currentStep === 2 ? 'active' : ''} ${currentStep > 2 ? 'done' : ''}`}>
                     <span className="step-number">2</span>
-                    <span>Tiền xử lý</span>
+                    <span>Xử lý</span>
                 </div>
                 <div className={`step ${currentStep === 3 ? 'active' : ''} ${currentStep > 3 ? 'done' : ''}`}>
                     <span className="step-number">3</span>
@@ -85,7 +78,7 @@ function App() {
                 </div>
                 <div className={`step ${currentStep === 4 ? 'active' : ''}`}>
                     <span className="step-number">4</span>
-                    <span>Kết quả</span>
+                    <span>Phân tích</span>
                 </div>
             </div>
 
@@ -99,7 +92,7 @@ function App() {
 
             {/* Content */}
             {currentStep === 1 && (
-                <UploadComponent onSuccess={handleUploadSuccess} onError={handleError} loading={loading} setLoading={setLoading} />
+                <DWConnectorComponent onSuccess={handleUploadSuccess} onError={handleError} loading={loading} setLoading={setLoading} />
             )}
 
             {currentStep === 2 && uploadedFile && (
@@ -126,10 +119,8 @@ function App() {
             )}
 
             {currentStep === 4 && kmeansResult && (
-                <ResultsComponent
+                <AnalysisComponent
                     kmeansResult={kmeansResult}
-                    conclusion={conclusion}
-                    onConclusion={handleConclusion}
                     onReset={handleReset}
                     loading={loading}
                     setLoading={setLoading}

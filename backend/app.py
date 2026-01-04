@@ -12,6 +12,7 @@ import pandas as pd
 from preprocessing import DataPreprocessor
 from kmeans_engine import KMeansEngine
 from conclusion_engine import ConclusionEngine
+from db_connector import SQLServerConnector
 
 # ==================== CONSTANTS ====================
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
@@ -370,6 +371,197 @@ def reset_state(
     clear_session(session_id)
     return {"status": "reset successful", "session_id": session_id}
 
+
+# ==================== DATA WAREHOUSE ENDPOINTS ====================
+
+class DWConnectionRequest(BaseModel):
+    connection_string: str
+
+class DWLoadRequest(BaseModel):
+    view_name: str
+    id_column: Optional[str] = "respondentID"
+
+class DWSaveRequest(BaseModel):
+    table_name: Optional[str] = "Fact_Clustering_Result"
+
+@app.post("/dw/test-connection")
+def test_dw_connection(request: DWConnectionRequest):
+    """Test kết nối SQL Server"""
+    try:
+        connector = SQLServerConnector(request.connection_string)
+        success, message = connector.test_connection()
+        
+        if success:
+            return {"status": "success", "message": message}
+        else:
+            raise HTTPException(status_code=400, detail=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/dw/views")
+def get_dw_views(
+    request: DWConnectionRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
+):
+    """Lấy danh sách views và tables từ SQL Server"""
+    try:
+        session_id = x_session_id or str(uuid.uuid4())
+        state = get_session(session_id)
+        
+        connector = SQLServerConnector(request.connection_string)
+        success, msg = connector.connect()
+        
+        if not success:
+            raise HTTPException(status_code=400, detail=msg)
+        
+        views, view_error = connector.get_views()
+        tables, table_error = connector.get_tables()
+        
+        # Lưu connector vào session
+        state["dw_connector"] = connector
+        state["dw_connection_string"] = request.connection_string
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "views": views,
+            "tables": tables,
+            "errors": {
+                "views": view_error,
+                "tables": table_error
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/dw/load")
+def load_dw_view(
+    request: DWLoadRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
+):
+    """Load dữ liệu từ view vào session để chạy K-Means"""
+    try:
+        session_id = x_session_id or "default"
+        state = get_session(session_id)
+        
+        if not state.get("dw_connector"):
+            raise HTTPException(status_code=400, detail="Chưa kết nối SQL Server. Gọi /dw/views trước.")
+        
+        connector = state["dw_connector"]
+        
+        # Load dữ liệu từ view
+        df, error = connector.load_view(request.view_name)
+        
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        
+        # Lưu ID column nếu có
+        if request.id_column and request.id_column in df.columns:
+            state["dw_id_column"] = request.id_column
+            state["dw_ids"] = df[request.id_column].tolist()
+        
+        # Tạo preprocessor và lưu vào session
+        preprocessor = DataPreprocessor()
+        preprocessor.original_shape = df.shape
+        
+        state["df"] = df
+        state["preprocessor"] = preprocessor
+        state["dw_view_name"] = request.view_name
+        
+        # Get column info
+        column_info = preprocessor.get_column_info(df)
+        
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "view_name": request.view_name,
+            "data": column_info
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/dw/save-clusters")
+def save_clusters_to_dw(
+    request: DWSaveRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
+):
+    """Lưu kết quả clustering về SQL Server"""
+    try:
+        session_id = x_session_id or "default"
+        state = get_session(session_id)
+        
+        if not state.get("dw_connector"):
+            raise HTTPException(status_code=400, detail="Chưa kết nối SQL Server")
+        
+        if not state.get("kmeans_engine"):
+            raise HTTPException(status_code=400, detail="Chưa chạy K-Means clustering")
+        
+        if not state.get("dw_ids"):
+            raise HTTPException(status_code=400, detail="Không có ID column để map kết quả")
+        
+        connector = state["dw_connector"]
+        kmeans_engine = state["kmeans_engine"]
+        respondent_ids = state["dw_ids"]
+        cluster_ids = kmeans_engine.labels.tolist()
+        
+        # Lưu vào SQL Server
+        success, message = connector.save_clustering_result(
+            respondent_ids,
+            cluster_ids,
+            request.table_name
+        )
+        
+        if success:
+            return {
+                "status": "success",
+                "message": message,
+                "table_name": request.table_name,
+                "records_saved": len(respondent_ids)
+            }
+        else:
+            raise HTTPException(status_code=400, detail=message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/dw/columns/{view_name:path}")
+def get_view_columns(
+    view_name: str,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-ID")
+):
+    """Lấy thông tin các cột của view"""
+    try:
+        session_id = x_session_id or "default"
+        state = get_session(session_id)
+        
+        if not state.get("dw_connector"):
+            raise HTTPException(status_code=400, detail="Chưa kết nối SQL Server")
+        
+        connector = state["dw_connector"]
+        columns, error = connector.get_view_columns(view_name)
+        
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+        
+        return {
+            "status": "success",
+            "view_name": view_name,
+            "columns": columns
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

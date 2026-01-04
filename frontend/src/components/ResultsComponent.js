@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { kpdlAPI } from '../services/api';
+import ClusterReportComponent from './ClusterReportComponent';
 
 const COLORS = [
     '#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe',
@@ -11,11 +12,12 @@ function ResultsComponent({
     kmeansResult,
     conclusion,
     onConclusion,
+    onGoToAnalysis,
     onReset,
     loading,
     setLoading,
 }) {
-    const [activeTab, setActiveTab] = useState('visualization'); // 'visualization' or 'analysis'
+    const [activeTab, setActiveTab] = useState('chart'); // 'chart' or 'detail'
     const [exporting, setExporting] = useState(false);
     const [conclusionLoading, setConclusionLoading] = useState(false);
 
@@ -98,18 +100,29 @@ function ResultsComponent({
             {/* Tab Navigation */}
             <div className="tab-nav">
                 <button
+                    className={`tab-btn ${activeTab === 'report' ? 'tab-active' : ''}`}
+                    onClick={() => setActiveTab('report')}
+                >
+                    📊 Báo cáo
+                </button>
+                <button
                     className={`tab-btn ${activeTab === 'visualization' ? 'tab-active' : ''}`}
                     onClick={() => setActiveTab('visualization')}
                 >
-                    Biểu đồ & Thống kê
+                    📈 Biểu đồ
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'analysis' ? 'tab-active' : ''}`}
                     onClick={() => setActiveTab('analysis')}
                 >
-                    Phân tích & Kết luận
+                    📝 Chi tiết
                 </button>
             </div>
+
+            {/* Tab 0: Report */}
+            {activeTab === 'report' && (
+                <ClusterReportComponent stats={stats} metrics={metrics} />
+            )}
 
             {/* Tab 1: Visualization */}
             {activeTab === 'visualization' && (
@@ -272,33 +285,78 @@ function ResultsComponent({
                     )}
 
                     {conclusion && conclusion.clusters && (
-                        <div className="card">
-                            <h2 className="card-title">Kết luận Tự động</h2>
-                            <div className="conclusion-summary">
-                                <p>{conclusion.summary || 'Phân tích hoàn tất'}</p>
+                        <div className="conclusion-card">
+                            <div className="conclusion-header-main">
+                                <span className="conclusion-icon">🎯</span>
+                                <h2>Kết Luận Phân Tích</h2>
                             </div>
 
-                            <h3 style={{ marginTop: '20px', marginBottom: '15px' }}>Nhận xét từng Cụm:</h3>
-                            {conclusion.clusters.map((cluster, idx) => (
-                                <div
-                                    key={idx}
-                                    className="conclusion-item"
-                                    style={{ borderLeftColor: COLORS[cluster.cluster_id % COLORS.length] }}
-                                >
-                                    <div className="conclusion-header">
-                                        <span className="conclusion-type" data-type={cluster.type}>
-                                            {cluster.type.toUpperCase()}
-                                        </span>
-                                        <span>Cụm {cluster.cluster_id} - {cluster.size} mẫu ({cluster.percentage.toFixed(1)}%)</span>
-                                    </div>
-                                    <p>{cluster.description}</p>
-                                    {cluster.insights.length > 0 && (
-                                        <div className="conclusion-insights">
-                                            <strong>Đặc điểm:</strong> {cluster.insights.join(', ')}
+                            {/* Cluster Cards */}
+                            <div className="conclusion-clusters">
+                                {conclusion.clusters.map((cluster, idx) => {
+                                    const color = COLORS[cluster.cluster_id % COLORS.length];
+                                    const typeEmoji = cluster.type === 'tích cực' ? '🟢' :
+                                        cluster.type === 'trung bình' ? '🟡' : '🔴';
+
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className="conclusion-cluster-card"
+                                            style={{ borderColor: color }}
+                                        >
+                                            <div className="cluster-card-top" style={{ backgroundColor: color }}>
+                                                <span className="cluster-type-emoji">{typeEmoji}</span>
+                                                <div className="cluster-card-title">
+                                                    <h4>Cụm {cluster.cluster_id}</h4>
+                                                    <span>{cluster.size} sinh viên • {cluster.percentage.toFixed(1)}%</span>
+                                                </div>
+                                                <span className="cluster-type-badge">{cluster.type.toUpperCase()}</span>
+                                            </div>
+
+                                            <div className="cluster-card-body">
+                                                <p className="cluster-description">{cluster.description}</p>
+
+                                                {cluster.insights && cluster.insights.length > 0 && (
+                                                    <div className="cluster-insights">
+                                                        <span className="insights-label">Đặc điểm:</span>
+                                                        <div className="insights-tags">
+                                                            {cluster.insights.slice(0, 6).map((insight, i) => (
+                                                                <span
+                                                                    key={i}
+                                                                    className={`insight-tag ${insight.includes('cao') ? 'positive' : 'negative'}`}
+                                                                >
+                                                                    {insight}
+                                                                </span>
+                                                            ))}
+                                                            {cluster.insights.length > 6 && (
+                                                                <span className="insight-more">+{cluster.insights.length - 6} khác</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    )}
+                                    );
+                                })}
+                            </div>
+
+                            {/* Metrics Summary */}
+                            {conclusion.metrics_interpretation && (
+                                <div className="metrics-summary">
+                                    <h4>📊 Đánh Giá Chất Lượng</h4>
+                                    <div className="metrics-grid">
+                                        {conclusion.metrics_interpretation.map((metric, idx) => (
+                                            <div key={idx} className="metric-item">
+                                                <span className="metric-name">{metric.metric}</span>
+                                                <span className="metric-value">{metric.value}</span>
+                                                <span className={`metric-quality ${metric.quality === 'Tốt' ? 'good' : metric.quality === 'Trung bình' ? 'medium' : 'weak'}`}>
+                                                    {metric.quality}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                            ))}
+                            )}
                         </div>
                     )}
                 </>
@@ -306,19 +364,28 @@ function ResultsComponent({
 
             {/* Actions - Always visible */}
             <div className="card">
-                <div className="btn-group" style={{ justifyContent: 'space-between' }}>
+                <h3 style={{ marginBottom: '15px' }}>Tiếp theo</h3>
+
+                <button
+                    className="btn btn-primary btn-block btn-lg"
+                    onClick={onGoToAnalysis}
+                >
+                    📊 Xem Báo Cáo Phân Tích →
+                </button>
+
+                <div className="btn-group" style={{ marginTop: '15px' }}>
                     <button
                         className="btn btn-secondary"
                         onClick={handleExportCSV}
                         disabled={exporting}
                     >
-                        {exporting ? 'Đang xuất...' : 'Tải báo cáo CSV'}
+                        {exporting ? 'Đang xuất...' : '📄 Tải CSV'}
                     </button>
                     <button
-                        className="btn btn-success"
+                        className="btn btn-outline"
                         onClick={onReset}
                     >
-                        Bắt đầu lại
+                        🔄 Làm lại
                     </button>
                 </div>
             </div>

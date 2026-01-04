@@ -100,6 +100,42 @@ export const kpdlAPI = {
 
     // Get current session ID
     getSessionId,
+
+    // ==================== DATA WAREHOUSE APIs ====================
+
+    // Test DW connection
+    testDWConnection: async (connectionString) => {
+        const response = await api.post('/dw/test-connection', {
+            connection_string: connectionString,
+        });
+        return response.data;
+    },
+
+    // Get views and tables from DW
+    getDWViews: async (connectionString) => {
+        const response = await api.post('/dw/views', {
+            connection_string: connectionString,
+        });
+        return response.data;
+    },
+
+    // Load data from DW view
+    loadDWView: async (viewName, idColumn = 'respondentID') => {
+        const response = await api.post('/dw/load', {
+            view_name: viewName,
+            id_column: idColumn,
+        });
+        return response.data;
+    },
+
+    // Save clustering results to DW
+    saveClusters: async (tableName = 'Fact_Clustering_Result') => {
+        const response = await api.post('/dw/save-clusters', {
+            table_name: tableName,
+        });
+        return response.data;
+    },
 };
 
 export default api;
+
